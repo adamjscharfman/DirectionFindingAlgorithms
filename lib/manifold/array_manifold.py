@@ -27,16 +27,16 @@ def ideal_manifold_vectorized(freq_list, phi_list, theta_list, rx_coords):
     k = 2 * np.pi * freq_list / c               # (K,)
 
     # ---- 2. Direction unit vectors u(phi,theta) ----
-    cosφ = np.cos(phi_list)                     # (N,)
-    sinφ = np.sin(phi_list)
-    cosθ = np.cos(theta_list)                   # (M,)
-    sinθ = np.sin(theta_list)
+    cosphi = np.cos(phi_list)                     # (N,)
+    sinphi = np.sin(phi_list)
+    costheta = np.cos(theta_list)                   # (M,)
+    sintheta = np.sin(theta_list)
 
     # Create a full grid of directions:
     # u.shape = (N, M, 3)
-    ux = sinθ[None, :] * cosφ[:, None]          # (N, M)
-    uy = sinθ[None, :] * sinφ[:, None]          # (N, M)
-    uz = cosθ[None, :] * np.ones((N, M))        # (N, M)
+    ux = sintheta[None, :] * cosphi[:, None]          # (N, M)
+    uy = sintheta[None, :] * sinphi[:, None]          # (N, M)
+    uz = costheta[None, :] * np.ones((N, M))        # (N, M)
 
     u = np.stack([ux, uy, uz], axis=-1)         # (N, M, 3)
 

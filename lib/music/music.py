@@ -1,6 +1,34 @@
 import numpy as np
+from lib.util import general_df
 
-def compute_music_metric(En_EnH: np.ndarray, steering_vectors: np.ndarray, frequency_index: list[int]):
+def compute_music_metric(signal:np.ndarray,steering_vectors:np.ndarray,frequency_index:int):
+    '''
+    Inputs:
+    signal - (Num Antennas x Num Samples) IQ data
+    steering_vectors - (Num Frequencies x Num Az x Num El x Num Antennas) array manifold at all combinations of frequencies, az, and el angles for a given array geometry
+    frequency_index - Index into frequency list of steering vectors
+
+    Returns:
+    music_metric - (Num Az x Num El) grid of MUSIC beamforming output
+    '''
+    R = general_df.compute_correlation_matrix(signal)
+
+    En_EnH = compute_noise_subspace(R)
+
+    A = steering_vectors[frequency_index]
+
+    # MUSIC denominator: aᴴ EnEnᴴ a for all az/el
+    denom = np.einsum("...i,ij,...j -> ...",
+                      A.conj(),
+                      En_EnH,
+                      A,
+                      optimize=True)
+
+    # P = 1 / (aᴴ E_n E_nᴴ a)
+    music_metric = 1.0 / np.real(denom)
+    return music_metric
+
+def compute_batch_music_metric(En_EnH: np.ndarray, steering_vectors: np.ndarray, frequency_index: list[int]):
     '''
     Inputs:
     En_EnH - (Num Signals x Num Antennas x Num Antennas) Noise subspace outer product
@@ -27,7 +55,30 @@ def compute_music_metric(En_EnH: np.ndarray, steering_vectors: np.ndarray, frequ
     music_metric = 1.0/np.real(music_metric_denom)
     return music_metric
 
-def compute_noise_subspace(R: np.ndarray, threshold_ratio: float = 0.1):
+def compute_noise_subspace(R:np.ndarray,threshold_ratio: float=0.1):
+    '''
+    Inputs:
+    R - ( Num Antennas x Num Antennas) Correlation matrix
+    threshold_ratio : eigenvalues <= threshold_ratio * max_eigenvalue 
+                      are considered noise eigenvalues
+
+    Returns:
+    En_EnH - (Num Antennas x Num Antennas) noise projectors En @ En^H
+    '''
+    # Compute eigendecomposition
+    eigvals,eigvecs = np.linalg.eigh(R)
+
+    # Extract the max eigvals (this should be the last eigval)
+    #max_eigvals = eigvals.max(axis=1,keepdims=True)
+    max_eigval = eigvals[-1]
+
+    # Compute the noise threshold
+    noise_mask = eigvals <= (threshold_ratio * max_eigval)
+    En = eigvecs[:,noise_mask]
+    En_EnH = En @ En.conj().T
+    return En_EnH
+
+def compute_batch_noise_subspace(R: np.ndarray, threshold_ratio: float = 0.1):
     '''
     Inputs:
     R - (Num Signals x Num Antennas x Num Antennas) batch of correlation matrices
