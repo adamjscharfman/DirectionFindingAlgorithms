@@ -1,5 +1,61 @@
 import numpy as np
+from lib.util import general_df
 
+def compute_mvdr_metric(signal:np.ndarray,steering_vectors:np.ndarray,frequency_index:int):
+    '''
+    Inputs:
+    signal - (Num Antennas x Num Samples) IQ data
+    steering_vectors - (Num Frequencies x Num Az x Num El x Num Antennas) array manifold at all combinations of frequencies, az, and el angles for a given array geometry
+    frequency_index - Index into frequency list of steering vectors
+
+    Returns:
+    mvdr_metric - (Num Az x Num El) grid of MUSIC beamforming output
+    '''
+    R = general_df.compute_correlation_matrix(signal)
+
+    A = steering_vectors[frequency_index]
+    # Convert A to a flattened matrix for faster numerical solver
+    num_az,num_el,num_ch = A.shape
+    num_angles = num_az*num_el
+    A_flat = A.reshape(num_angles,num_ch)
+
+    # Numerical solve of X = R^-1 @ A in MVDR demoninator
+    X = np.linalg.solve(R,A_flat.T) #(num_ch,num_ch) @ (num_ch,num_angles) -> (num_ch,num_angles)
+
+    # Solve A^H @ X
+    denom = np.sum(A_flat.conj() * X.T,axis=1) #(num_angles,num_ch) * (num_angles,num_ch)
+
+
+    # P = 1 / (aᴴ E_n E_nᴴ a)
+    mvdr_metric = 1.0 / np.real(denom)
+    return mvdr_metric.reshape(num_az,num_el)
+
+def compute_mvdr_metric_inverse_method(signal:np.ndarray,steering_vectors:np.ndarray,frequency_index:int):
+    '''
+    Inputs:
+    signal - (Num Antennas x Num Samples) IQ data
+    steering_vectors - (Num Frequencies x Num Az x Num El x Num Antennas) array manifold at all combinations of frequencies, az, and el angles for a given array geometry
+    frequency_index - Index into frequency list of steering vectors
+
+    Returns:
+    mvdr_metric - (Num Az x Num El) grid of MUSIC beamforming output
+    '''
+    R = general_df.compute_correlation_matrix(signal)
+
+    A = steering_vectors[frequency_index]
+
+    # Note - Computing explicit inverse not recommended bc of numerical instability if R is ill-conditioned (det(R) ~ 0)
+    inv_R = np.linalg.inv(R)
+    # MVDR denominator: a^H R^-1 a for all az/el
+    denom = np.einsum("...i,ij,...j -> ...",
+                      A.conj(),
+                      inv_R,
+                      A,
+                      optimize=True)
+
+    # P = 1 / (aᴴ E_n E_nᴴ a)
+    mvdr_metric = 1.0 / np.real(denom)
+    return mvdr_metric
 
 def mvdr_power(array_manifold, cross_corr_mtx, freq_idx, reg=1e-6, eps=1e-12):
     """
