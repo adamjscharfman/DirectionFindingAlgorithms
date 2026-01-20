@@ -55,7 +55,7 @@ def compute_batch_music_metric(En_EnH: np.ndarray, steering_vectors: np.ndarray,
     music_metric = 1.0/np.real(music_metric_denom)
     return music_metric
 
-def compute_noise_subspace(R:np.ndarray,threshold_ratio: float=0.1):
+def compute_noise_subspace(R:np.ndarray,threshold_ratio: float=0.01):
     '''
     Inputs:
     R - ( Num Antennas x Num Antennas) Correlation matrix
