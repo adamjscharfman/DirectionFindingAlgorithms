@@ -1,6 +1,30 @@
 import numpy as np
+from lib.util import general_df
 
-def compute_cidf_metric(cross_corr_mtx,array_manifold,freq_index):
+def compute_bartlett_metric(signal:np.ndarray,steering_vectors:np.ndarray,frequency_index:int):
+    '''
+    Inputs:
+    signal - (Num Antennas x Num Samples) IQ data
+    steering_vectors - (Num Frequencies x Num Az x Num El x Num Antennas) array manifold at all combinations of frequencies, az, and el angles for a given array geometry
+    frequency_index - Index into frequency list of steering vectors
+
+    Returns:
+    mvdr_metric - (Num Az x Num El) grid of MUSIC beamforming output
+    '''
+    R = general_df.compute_correlation_matrix_normalized(signal)
+
+    A = steering_vectors[frequency_index]
+
+    # MVDR denominator: a^H R a for all az/el
+    bartlett_metric = np.real(np.einsum("...i,ij,...j -> ...",
+                      A.conj(),
+                      R,
+                      A,
+                      optimize=True))
+
+    return bartlett_metric
+
+def compute_bartlett_batch_metric(cross_corr_mtx,array_manifold,freq_index):
     """
     cross_corr_mtx: ndarray, shape (num_signals, num_ch, num_ch)
         Correlation matrices (complex).

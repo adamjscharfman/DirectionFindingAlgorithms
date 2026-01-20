@@ -56,12 +56,12 @@ def ideal_manifold_vectorized(freq_list, phi_list, theta_list, rx_coords):
     phase = k[:, None, None, None] * proj[None, :, :, :]
 
     # ---- 5. Final manifold A = exp(j * phase) ----
-    A = np.exp(1j * phase)
+    A = np.exp(-1j * phase)/np.sqrt(L)
 
     return A
 
 
-def ideal_manifold_loop(freq_list:np.array,phi_list:np.array,theta_list:np.array,rx_coords:np.ndarray):
+def ideal_manifold_loop(freq_list:np.array,phi_list:np.array,theta_list:np.array,rx_coords:np.ndarray)->np.ndarray:
     '''
     Inputs:
     freq_list - (K) array of frequencies
@@ -92,6 +92,73 @@ def ideal_manifold_loop(freq_list:np.array,phi_list:np.array,theta_list:np.array
                     sin_theta[theta_ind]*sin_phi[phi_ind],
                     cos_theta[theta_ind]])
                 proj = direction_manifold @ rx_coords.T
-                A[f_ind,phi_ind,theta_ind,:] = np.exp(1j * k_wave * proj)
+                A[f_ind,phi_ind,theta_ind,:] = np.exp(-1j * k_wave * proj)/np.sqrt(num_antennas)
 
     return A
+
+def ideal_manifold_linear_array_loop(freq_list:np.array,theta_list:np.array,rx_coords:np.ndarray)->np.ndarray:
+    '''
+    Inputs:
+    freq_list - (K) array of frequencies
+    theta_list - (M) array of azimuth angles in radians
+    rx_coords - (L) array of antenna positions in x (y=0)
+
+    Returns:
+    A - (K x M x L) array of array manifold at all combinations of frequencies, az, and for a given array geometry
+    '''
+    num_freqs = len(freq_list)
+    num_theta = len(theta_list)
+    num_antennas = np.shape(rx_coords)[0]
+
+    # Direction cosines (unit vectors) for each (phi, theta)
+    A = np.empty((num_freqs,num_theta,num_antennas),dtype=complex)
+    for f_ind,f in enumerate(freq_list):
+        k_wave = 2*np.pi*f/speed_of_light
+        for theta_ind,theta in enumerate(theta_list):
+            A[f_ind,theta_ind,:] = np.exp(-1j * k_wave * rx_coords * np.sin(theta))
+
+    return A
+
+def antenna_pattern_estimate_loop(freq_list:np.array,phi_list:np.array,theta_list:np.array,rx_coords:np.ndarray):
+    '''
+    Inputs:
+    freq_list - (K) array of frequencies
+    phi_list - (N) array of azimuth angles in radians
+    theta_list - (M) array of elevation angles in radians
+    rx_coords - (L x 3) array of antenna positions in x,y,z
+
+    Returns:
+    A - (K x N x M x L) array of array manifold at all combinations of frequencies, az, and el angles for a given array geometry
+    '''
+    num_freqs = len(freq_list)
+    num_phi = len(phi_list)
+    num_theta = len(theta_list)
+    num_antennas = np.shape(rx_coords)[0]
+
+    # Direction cosines (unit vectors) for each (phi, theta)
+    cos_phi = np.cos(phi_list)
+    sin_phi = np.sin(phi_list)
+    cos_theta = np.cos(theta_list)
+    sin_theta = np.sin(theta_list)
+    A = np.empty((num_freqs,num_phi,num_theta,num_antennas),dtype=complex)
+    antenna_pattern = np.empty((num_freqs,num_phi,num_theta),dtype=complex)
+    for f_ind,f in enumerate(freq_list):
+        k_wave = 2*np.pi*f/speed_of_light
+        for phi_ind,phi in enumerate(phi_list):
+            for theta_ind,theta in enumerate(theta_list):
+                direction_manifold = np.array([
+                    sin_theta[theta_ind]*cos_phi[phi_ind],
+                    sin_theta[theta_ind]*sin_phi[phi_ind],
+                    cos_theta[theta_ind]])
+                proj = direction_manifold @ rx_coords.T
+                A[f_ind,phi_ind,theta_ind,:] = np.exp(-1j * k_wave * proj)/np.sqrt(num_antennas)
+    phi_ind_0 = num_phi//2
+    theta_ind_0 = num_theta//2
+    A_0 = A[:,phi_ind_0,theta_ind_0,:]
+
+    for f_ind,f in enumerate(freq_list):
+        for phi_ind,phi in enumerate(phi_list):
+            for theta_ind,theta in enumerate(theta_list):
+                antenna_pattern[f_ind,phi_ind,theta_ind] = np.dot(A_0[f_ind].conj(),A[f_ind,phi_ind,theta_ind,:])
+
+    return A,antenna_pattern

@@ -14,6 +14,20 @@ def compute_correlation_matrix(iq_data:np.ndarray):
 
     return xcorr_mtx
 
+def compute_correlation_matrix_normalized(iq_data:np.ndarray):
+    '''
+    Inputs:
+    iq_data - (Num Antennas x Num Samples) Received signal
+
+    Returns:
+    xcorr_mtx - (Num Antennas x Num Antennas) Correlation matrices
+    '''
+
+    xcorr_mtx = iq_data @ iq_data.conj().T
+    tr = np.trace(xcorr_mtx).real
+
+    return xcorr_mtx / tr
+
 def compute_batch_correlation_matrix(iq_data:np.ndarray):
     '''
     Inputs:
