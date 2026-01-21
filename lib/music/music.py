@@ -12,8 +12,7 @@ def compute_music_metric(signal:np.ndarray,steering_vectors:np.ndarray,frequency
     music_metric - (Num Az x Num El) grid of MUSIC beamforming output
     '''
     R = general_df.compute_correlation_matrix(signal)
-
-    En_EnH = compute_noise_subspace(R)
+    En_EnH = compute_noise_subspace(R,num_samples=signal.shape[1])
 
     A = steering_vectors[frequency_index]
 
@@ -55,7 +54,7 @@ def compute_batch_music_metric(En_EnH: np.ndarray, steering_vectors: np.ndarray,
     music_metric = 1.0/np.real(music_metric_denom)
     return music_metric
 
-def compute_noise_subspace(R:np.ndarray,threshold_ratio: float=0.01):
+def compute_noise_subspace(R:np.ndarray,threshold_ratio:float=0.01, num_samples:int=2048,method:str="mdl"):
     '''
     Inputs:
     R - ( Num Antennas x Num Antennas) Correlation matrix
@@ -67,13 +66,22 @@ def compute_noise_subspace(R:np.ndarray,threshold_ratio: float=0.01):
     '''
     # Compute eigendecomposition
     eigvals,eigvecs = np.linalg.eigh(R)
-
+    M = np.shape(R)[0]
     # Extract the max eigvals (this should be the last eigval)
     #max_eigvals = eigvals.max(axis=1,keepdims=True)
-    max_eigval = eigvals[-1]
+    if method == "thresh":
+        max_eigval = eigvals[-1]
+        noise_mask = eigvals <= (threshold_ratio * max_eigval)
+    elif method == "aic":
+        num_sources,_ = aic_num_sources(eigvals[::-1],num_samples)
+        noise_mask = np.ones(M, dtype=bool)   # start: everything is noise
+        noise_mask[M-num_sources:] = False            # first k_hat are signal
+    elif method == "mdl":
+        num_sources,_ = mdl_num_sources(eigvals[::-1],num_samples)
+        noise_mask = np.ones(M, dtype=bool)   # start: everything is noise
+        noise_mask[M-num_sources:] = False            # first k_hat are signal
 
     # Compute the noise threshold
-    noise_mask = eigvals <= (threshold_ratio * max_eigval)
     En = eigvecs[:,noise_mask]
     En_EnH = En @ En.conj().T
     return En_EnH
@@ -112,3 +120,80 @@ def compute_batch_noise_subspace(R: np.ndarray, threshold_ratio: float = 0.1):
     # En_EnH2 = np.einsum("sni,smi->snm", masked_vecs, masked_vecs.conj())
     
     return En_EnH
+
+def aic_num_sources(eigvals:np.array, N:int)->tuple[int,np.array]:
+    """
+    Estimate number of sources using Akaike Information Criterion (AIC).
+
+    Inputs:
+    eigvals - Eigenvalues of covariance matrix (sorted descending).
+    N - Number of snapshots.
+    Returns:
+    k_hat - Estimated number of sources.
+    aic - AIC cost for k = 0,...,M-1
+    """
+    eigvals = np.asarray(eigvals).real
+    M = len(eigvals)
+
+    # Small floor to avoid log(0)
+    eps = 1e-12
+    eigvals = np.maximum(eigvals, eps)
+
+    aic = np.zeros(M)
+
+    for k in range(M):
+        m_k = M - k
+        if m_k == 0:
+            aic[k] = np.inf
+            continue
+
+        noise_eigs = eigvals[k:]
+
+        A_k = np.mean(noise_eigs)
+        G_k = np.exp(np.mean(np.log(noise_eigs)))  # geometric mean
+
+        aic[k] = (
+            -2 * N * m_k * np.log(G_k / A_k)
+            + 2 * k * (2 * M - k)
+        )
+
+    k_hat = np.argmin(aic)
+    return k_hat, aic
+
+def mdl_num_sources(eigvals:np.ndarray, N:int)->tuple[int,np.array]:
+    """
+    Estimate number of sources using Minimum Descriptor Length (MDL).
+
+    Inputs:
+    eigvals - Eigenvalues of covariance matrix (sorted descending).
+    N - Number of snapshots.
+    Returns:
+    k_hat - Estimated number of sources.
+    mdl - mdl cost for k = 0,...,M-1
+    """
+    M = len(eigvals)
+    mdl_vals = np.zeros(M)
+
+    for k in range(M):
+        if k == M:
+            mdl_vals[k] = np.inf
+            continue
+
+        noise_eigs = eigvals[k:]
+
+        # Avoid numerical issues
+        if np.any(noise_eigs <= 0):
+            mdl_vals[k] = np.inf
+            continue
+
+        # Geometric and arithmetic means
+        g_mean = np.exp(np.mean(np.log(noise_eigs)))
+        a_mean = np.mean(noise_eigs)
+
+        mdl_vals[k] = (
+            -N * (M - k) * np.log(g_mean / a_mean)
+            + 0.5 * k * (2 * M - k) * np.log(N)
+        )
+
+    k_hat = np.argmin(mdl_vals)
+    return k_hat, mdl_vals
